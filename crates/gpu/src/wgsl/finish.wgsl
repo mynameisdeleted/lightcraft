@@ -479,8 +479,10 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
     let mx = max(d.x, max(d.y, d.z));
     if (mx > 1.0) {
-        let t = clamp((mx - 1.0) / max(mx - o, 1e-6), 0.0, 1.0);
-        d = d + (o - d) * t;
+        let d_scaled = d * (1.0 / mx);
+        let u = (mx - 1.0) / mx;
+        let bleach = sstep(0.0, 0.65, u);
+        d = d_scaled + (vec3<f32>(1.0) - d_scaled) * bleach;
     }
 
     // --- colour

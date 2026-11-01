@@ -429,8 +429,10 @@ pub(crate) fn finish_with<T: Copy + Default + Send>(
             }
             let mx = d[0].max(d[1]).max(d[2]);
             if mx > peak {
-                let t = ((mx - peak) / (mx - o).max(1e-6)).clamp(0.0, 1.0);
-                d = d.map(|v| v + (o - v) * t);
+                let d_scaled = d.map(|v| v * (peak / mx));
+                let u = (mx - peak) / mx;
+                let bleach = smooth(0.0, 0.65, u);
+                d = d_scaled.map(|v| v + (peak - v) * bleach);
             }
 
             // --- colour
@@ -909,5 +911,33 @@ mod tests {
         assert_eq!(count_254, 32);
         assert_eq!(count_255, 32);
         assert_eq!(sum_hl, 32 * 254 + 32 * 255);
+    }
+
+    /// Verifies that saturated colors exceeding peak desaturate smoothly without abrupt brightness cliffs.
+    #[test]
+    fn highlight_desaturation_is_smooth_and_avoids_brightness_cliffs() {
+        let peak = 1.0f32;
+        let mut prev_luma = 0.0f32;
+        for i in 80..=300 {
+            let s = i as f32 / 100.0;
+            let d = [0.1 * s, 0.2 * s, 1.0 * s];
+            let mx = d[0].max(d[1]).max(d[2]);
+            let d_out = if mx > peak {
+                let d_scaled = d.map(|v| v * (peak / mx));
+                let u = (mx - peak) / mx;
+                let bleach = smooth(0.0, 0.65, u);
+                d_scaled.map(|v| v + (peak - v) * bleach)
+            } else {
+                d
+            };
+            assert!(d_out[0].max(d_out[1]).max(d_out[2]) <= peak + 1e-6);
+            let luma = 0.2126 * d_out[0] + 0.7152 * d_out[1] + 0.0722 * d_out[2];
+            assert!(luma >= prev_luma - 1e-6, "luma must be monotonic: {luma} vs {prev_luma}");
+            if i > 80 {
+                // Ensure no sharp jump across the peak boundary (i = 100 to 101)
+                assert!(luma - prev_luma < 0.05, "brightness cliff at s={s}: jump was {}", luma - prev_luma);
+            }
+            prev_luma = luma;
+        }
     }
 }
